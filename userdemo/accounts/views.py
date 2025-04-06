@@ -1,71 +1,118 @@
+import random
 from django.shortcuts import render, redirect
-from django.contrib.auth import login, logout, authenticate
-from .forms import CustomUserCreationForm
 from django.contrib import messages
+from django.contrib.auth import authenticate, login as auth_login, logout
 from django.contrib.auth.decorators import login_required
+from django.core.mail import send_mail
+from django.conf import settings
 from .models import CustomUser
+from django.contrib.auth import logout as auth_logout
 
-# Sign-up view
-def signup_view(request):
+def generate_otp():
+    return str(random.randint(100000, 999999))
+
+
+def signup(request):
     if request.user.is_authenticated:
-        return redirect('dashboard')
-    
-    if request.method == 'POST':
-        username = request.POST.get('username')
-        password = request.POST.get('password')
+        return redirect("profile")
+    if request.method == "POST":
+        email = request.POST["email"]
+        password = request.POST["password"]
 
-        if CustomUser.objects.filter(username=username).exists():
-            messages.error(request, 'Username already exists.')
-            return render(request, 'signup.html')
+        if CustomUser.objects.filter(email=email).exists():
+            messages.error(request, "Email already exists")
+            return redirect("signup")
 
-        user = CustomUser.objects.create_user(username=username, password=password)
-        user.save()
+        otp = generate_otp()
+        request.session["pending_user"] = {
+            "email": email,
+            "password": password,
+            "otp": otp
+        }
 
-        login(request, user)
-        return redirect('dashboard')
+        send_mail(
+            "Your OTP Code",
+            f"Your OTP code is {otp}",
+            settings.EMAIL_HOST_USER,
+            [email],
+            fail_silently=False,
+        )
 
-    return render(request, 'signup.html')
+        return redirect("verify_otp")
 
-# Login view
+    return render(request, "signup.html")
+
+
+def verify_otp(request):
+    if request.user.is_authenticated:
+        return redirect("profile")
+    session_data = request.session.get("pending_user")
+
+    if not session_data:
+        messages.error(request, "Invalid request. Please sign up again.")
+        return redirect("signup")
+
+    if request.method == "POST":
+        input_otp = request.POST.get("otp")
+
+        if input_otp == session_data["otp"]:
+            email = session_data["email"]
+            password = session_data["password"]
+
+            user = CustomUser.objects.create_user(email=email, password=password)
+            user.is_active = True
+            user.email_verified = True
+            user.save()
+
+            # Clear session
+            del request.session["pending_user"]
+
+            messages.success(request, "Email verified successfully! You can now log in.")
+            return redirect("login")
+        else:
+            messages.error(request, "Invalid OTP. Please try again.")
+            return redirect("verify_otp")
+
+    return render(request, "verify_otp.html")
+
+
+
 def login_view(request):
     if request.user.is_authenticated:
-        return redirect('dashboard')
-    
-    if request.method == 'POST':
-        username = request.POST.get('username')
-        password = request.POST.get('password')
-        print("Login POST received. Username:", username, "Password:", password)
+        return redirect("profile")
+    if request.method == "POST":
+        email = request.POST["email"]
+        password = request.POST["password"]
 
-        # Authenticate user
-        user = authenticate(request, username=username, password=password)
+        user = authenticate(request, email=email, password=password)
 
         if user is not None:
-            print("Authentication successful for", user.username)
-            login(request, user)
-            return redirect('dashboard')  # Redirect to dashboard on successful login
+            if user.email_verified:
+                auth_login(request, user)
+                return redirect("profile")
+            else:
+                messages.error(request, "Please verify your email first.")
+                return redirect("login")
         else:
-            print("Authentication failed.")
-            messages.error(request, 'Invalid username or password.')
+            messages.error(request, "Invalid credentials.")
+            return redirect("login")
 
-    return render(request, 'login.html')
+    return render(request, "login.html")
 
-# Logout view
 def logout_view(request):
-    logout(request)  # Logs out the user and clears session data
-    return redirect('login')  # Redirects to login page after logout
+    auth_logout(request)
+    messages.success(request, "You have been logged out.")
+    return redirect("login")
 
-# Dashboard view
-@login_required(login_url='/login/')
-def dashboard_view(request):
-    print("User authenticated:", request.user.is_authenticated)
-    print("User:", request.user)
 
-    # Handle updating phone number
-    if request.method == 'POST':
-        phone = request.POST.get('phone_number')
-        if phone:
-            request.user.phone_number = phone
-            request.user.save()
-            messages.success(request, "Phone number updated!")
+@login_required(login_url="/login/")
+def profile(request):
+    if request.method == "POST":
+        user = request.user
+        user.first_name = request.POST.get("first_name", "")
+        user.last_name = request.POST.get("last_name", "")
+        user.phone_number = request.POST.get("phone_number", "")
+        user.save()
+        messages.success(request, "Profile updated successfully.")
 
-    return render(request, 'dashboard.html', {'user': request.user})
+    return render(request, "profile.html", {"user": request.user})

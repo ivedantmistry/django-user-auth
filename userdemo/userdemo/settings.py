@@ -122,6 +122,15 @@ MESSAGE_TAGS = {
     messages.ERROR: 'danger',
 }
 
-LOGIN_URL = '/login/'              # where to go if user needs to log in
-LOGIN_REDIRECT_URL = '/dashboard/' # where to go *after* a successful login
-LOGOUT_REDIRECT_URL = '/login/'    # optional: after logout
+LOGIN_URL = '/login/'              
+LOGIN_REDIRECT_URL = '/dashboard/' 
+LOGOUT_REDIRECT_URL = '/login/'    
+
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = 'guiitarcouncil@gmail.com'
+EMAIL_HOST_PASSWORD = 'tzjz viup bbsy iqlg'  
+
+SESSION_COOKIE_AGE = 300  # 5 minutes
